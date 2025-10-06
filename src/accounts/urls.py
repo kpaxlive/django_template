@@ -8,6 +8,8 @@ from .views import (
     DeleteUserView,
     GoogleLoginView,
     AppleLoginView,
+    AnonymousRegisterView,
+    ConvertAnonymousView,
 )
 
 app_name = 'accounts'
@@ -26,5 +28,9 @@ urlpatterns = [
     # Social Authentication
     path('login/google/', GoogleLoginView.as_view(), name='google_login'),
     path('login/apple/', AppleLoginView.as_view(), name='apple_login'),
+    
+    # Anonymous Users
+    path('anonymous/register/', AnonymousRegisterView.as_view(), name='anonymous_register'),
+    path('anonymous/convert/', ConvertAnonymousView.as_view(), name='convert_anonymous'),
 ]
 

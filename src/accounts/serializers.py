@@ -133,3 +133,56 @@ class DeleteUserSerializer(serializers.Serializer):
             raise serializers.ValidationError('You must confirm deletion.')
         return value
 
+
+class AnonymousRegisterSerializer(serializers.Serializer):
+    """Serializer for anonymous user registration."""
+    
+    device_id = serializers.CharField(required=False, max_length=255, allow_blank=True)
+    
+    def validate_device_id(self, value):
+        """Validate device_id if provided."""
+        if value and len(value) < 10:
+            raise serializers.ValidationError('Device ID must be at least 10 characters.')
+        return value
+
+
+class ConvertAnonymousSerializer(serializers.Serializer):
+    """Serializer for converting anonymous user to real user."""
+    
+    email = serializers.EmailField(required=True)
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        validators=[validate_password],
+        style={'input_type': 'password'}
+    )
+    password2 = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={'input_type': 'password'},
+        label='Confirm Password'
+    )
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    merge_data = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text='If true, keeps the same user ID and data. If false, creates new user.'
+    )
+    
+    def validate(self, attrs):
+        """Validate that passwords match."""
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({
+                "password": "Password fields didn't match."
+            })
+        
+        # Check if email already exists (for non-anonymous users)
+        email = attrs['email']
+        if User.objects.filter(email=email, is_anonymous=False).exists():
+            raise serializers.ValidationError({
+                "email": "User with this email already exists."
+            })
+        
+        return attrs
+

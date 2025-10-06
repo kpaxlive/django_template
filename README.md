@@ -9,6 +9,7 @@ A complete, production-ready Django REST API authentication system with JWT toke
 - ✅ Token Refresh & Blacklisting
 - ✅ Google OAuth Login
 - ✅ Apple Sign In
+- ✅ **Anonymous Users** (Optional - see `ANONYMOUS_USERS.md`)
 - ✅ User Management (Get Profile, Delete Account)
 - ✅ Complete Swagger/OpenAPI Documentation
 - ✅ CORS Support for Mobile/Web Clients
@@ -448,6 +449,41 @@ python manage.py migrate
 ## Testing
 
 Test all endpoints using Swagger UI at `http://localhost:8000/api/docs/`
+
+## 📚 Documentation
+
+This project includes comprehensive documentation:
+
+- **[API_FLOWS.md](API_FLOWS.md)** - Detailed API flow diagrams with Flutter examples (650+ lines)
+  - Anonymous → Email conversion
+  - Anonymous → Google/Apple conversion
+  - Direct registration flows
+  - Common mistakes and best practices
+  
+- **[ANONYMOUS_USERS.md](ANONYMOUS_USERS.md)** - Complete guide for anonymous users (535+ lines)
+  - Feature overview
+  - Implementation guide
+  - Flutter examples
+  - Cleanup strategies
+  
+- **[ANONYMOUS_USER_SCENARIOS.md](ANONYMOUS_USER_SCENARIOS.md)** - Edge cases and scenarios (648+ lines)
+  - Device ID strategies
+  - Merge scenarios
+  - Email/Social conflicts
+  - All possible user flows
+  
+- **[API_RESPONSE_STANDARD.md](API_RESPONSE_STANDARD.md)** - API response format standard
+  - Response structure
+  - Success/Error codes
+  - Frontend integration examples
+
+- **[GOOGLE_AUTH_TESTING.md](GOOGLE_AUTH_TESTING.md)** - Google Auth testing guide (800+ lines)
+  - OAuth flow explanation
+  - How to get Google access token
+  - Test methods (Playground, HTML, cURL)
+  - Flutter implementation
+  - Token types explained
+  - Common mistakes
 
 ## Support
 

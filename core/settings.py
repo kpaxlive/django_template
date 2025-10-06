@@ -254,3 +254,7 @@ REST_AUTH = {
     'USER_DETAILS_SERIALIZER': 'src.accounts.serializers.UserSerializer',
     'TOKEN_MODEL': None,  # We're using JWT, not token auth
 }
+
+# Anonymous User Settings
+ALLOW_ANONYMOUS_USERS = config('ALLOW_ANONYMOUS_USERS', default=True, cast=bool)
+ANONYMOUS_USER_RETENTION_DAYS = config('ANONYMOUS_USER_RETENTION_DAYS', default=30, cast=int)

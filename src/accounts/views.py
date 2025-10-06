@@ -8,6 +8,7 @@ from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from django.contrib.auth import get_user_model
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 import requests
+import uuid
 
 from .serializers import (
     RegisterSerializer,
@@ -17,8 +18,11 @@ from .serializers import (
     UserSerializer,
     GoogleLoginSerializer,
     AppleLoginSerializer,
+    AnonymousRegisterSerializer,
+    ConvertAnonymousSerializer,
 )
 from .responses import success_response, error_response, ResponseCodes
+from django.conf import settings
 
 User = get_user_model()
 
@@ -245,12 +249,15 @@ class DeleteUserView(APIView):
         200: TokenResponseSerializer,
         400: OpenApiResponse(description='Invalid token'),
     },
-    auth=[],  # No authentication required
+    auth=[],  # No authentication required, but can be used to merge anonymous user
 )
 class GoogleLoginView(APIView):
     """
     Login or register using Google OAuth.
     Provide the Google access token to authenticate.
+    
+    If called with an anonymous user's token, the anonymous user will be converted
+    to a Google account (merge strategy).
     """
     
     permission_classes = [AllowAny]
@@ -287,20 +294,52 @@ class GoogleLoginView(APIView):
                 )
                 return Response(response_data, status=http_status)
             
-            # Get or create user
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    'first_name': user_info.get('given_name', ''),
-                    'last_name': user_info.get('family_name', ''),
-                    'auth_provider': 'google',
-                }
-            )
+            # Check if current user is anonymous (for merge)
+            current_user = request.user if request.user.is_authenticated else None
+            is_anonymous_merge = current_user and getattr(current_user, 'is_anonymous', False)
             
-            # If user exists but was created with email, update auth_provider
-            if not created and user.auth_provider == 'email':
+            # If anonymous user tries to merge but feature is disabled, block it
+            if is_anonymous_merge and not getattr(settings, 'ALLOW_ANONYMOUS_USERS', False):
+                response_data, http_status = error_response(
+                    error='Anonymous user feature is disabled.',
+                    code=ResponseCodes.ANONYMOUS_FEATURE_DISABLED,
+                    http_status=status.HTTP_403_FORBIDDEN
+                )
+                return Response(response_data, status=http_status)
+            
+            if is_anonymous_merge:
+                # Merge: Convert anonymous user to Google account
+                user = current_user
+                user.email = email
+                user.first_name = user_info.get('given_name', '')
+                user.last_name = user_info.get('family_name', '')
+                user.is_anonymous = False
                 user.auth_provider = 'google'
+                user.device_id = None
                 user.save()
+                created = False
+            else:
+                # Normal flow: Get or create user by email
+                # Check if email exists for non-anonymous user
+                existing_user = User.objects.filter(email=email, is_anonymous=False).first()
+                
+                if existing_user:
+                    # User exists - just update auth provider if needed
+                    user = existing_user
+                    if user.auth_provider != 'google':
+                        user.auth_provider = 'google'
+                        user.save()
+                    created = False
+                else:
+                    # Create new user
+                    user = User.objects.create(
+                        email=email,
+                        first_name=user_info.get('given_name', ''),
+                        last_name=user_info.get('family_name', ''),
+                        auth_provider='google',
+                        is_active=True,
+                    )
+                    created = True
             
             # Generate tokens
             refresh = RefreshToken.for_user(user)
@@ -331,12 +370,15 @@ class GoogleLoginView(APIView):
         200: TokenResponseSerializer,
         400: OpenApiResponse(description='Invalid token'),
     },
-    auth=[],  # No authentication required
+    auth=[],  # No authentication required, but can be used to merge anonymous user
 )
 class AppleLoginView(APIView):
     """
     Login or register using Apple Sign In.
     Provide the Apple ID token to authenticate.
+    
+    If called with an anonymous user's token, the anonymous user will be converted
+    to an Apple account (merge strategy).
     """
     
     permission_classes = [AllowAny]
@@ -369,18 +411,48 @@ class AppleLoginView(APIView):
                 )
                 return Response(response_data, status=http_status)
             
-            # Get or create user
-            user, created = User.objects.get_or_create(
-                email=email,
-                defaults={
-                    'auth_provider': 'apple',
-                }
-            )
+            # Check if current user is anonymous (for merge)
+            current_user = request.user if request.user.is_authenticated else None
+            is_anonymous_merge = current_user and getattr(current_user, 'is_anonymous', False)
             
-            # If user exists but was created with email, update auth_provider
-            if not created and user.auth_provider == 'email':
+            # If anonymous user tries to merge but feature is disabled, block it
+            if is_anonymous_merge and not getattr(settings, 'ALLOW_ANONYMOUS_USERS', False):
+                response_data, http_status = error_response(
+                    error='Anonymous user feature is disabled.',
+                    code=ResponseCodes.ANONYMOUS_FEATURE_DISABLED,
+                    http_status=status.HTTP_403_FORBIDDEN
+                )
+                return Response(response_data, status=http_status)
+            
+            if is_anonymous_merge:
+                # Merge: Convert anonymous user to Apple account
+                user = current_user
+                user.email = email
+                user.is_anonymous = False
                 user.auth_provider = 'apple'
+                user.device_id = None
                 user.save()
+                created = False
+            else:
+                # Normal flow: Get or create user by email
+                # Check if email exists for non-anonymous user
+                existing_user = User.objects.filter(email=email, is_anonymous=False).first()
+                
+                if existing_user:
+                    # User exists - just update auth provider if needed
+                    user = existing_user
+                    if user.auth_provider != 'apple':
+                        user.auth_provider = 'apple'
+                        user.save()
+                    created = False
+                else:
+                    # Create new user
+                    user = User.objects.create(
+                        email=email,
+                        auth_provider='apple',
+                        is_active=True,
+                    )
+                    created = True
             
             # Generate tokens
             refresh = RefreshToken.for_user(user)
@@ -400,5 +472,178 @@ class AppleLoginView(APIView):
                 error=f'Apple authentication failed: {str(e)}',
                 code=ResponseCodes.APPLE_AUTH_FAILED,
                 http_status=status.HTTP_400_BAD_REQUEST
+            )
+            return Response(response_data, status=http_status)
+
+
+@extend_schema(
+    tags=['Anonymous Users'],
+    request=AnonymousRegisterSerializer,
+    responses={
+        201: TokenResponseSerializer,
+        400: OpenApiResponse(description='Bad Request'),
+        403: OpenApiResponse(description='Feature disabled'),
+    },
+    auth=[],  # No authentication required
+)
+class AnonymousRegisterView(APIView):
+    """
+    Register an anonymous user with device ID.
+    Returns access and refresh tokens. User can later convert to a real account.
+    This feature can be disabled via ALLOW_ANONYMOUS_USERS setting.
+    """
+    
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # Check if feature is enabled
+        if not getattr(settings, 'ALLOW_ANONYMOUS_USERS', False):
+            response_data, http_status = error_response(
+                error='Anonymous user feature is disabled.',
+                code=ResponseCodes.ANONYMOUS_FEATURE_DISABLED,
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+            return Response(response_data, status=http_status)
+        
+        serializer = AnonymousRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Get device_id from request or generate one
+        device_id = serializer.validated_data.get('device_id')
+        if not device_id:
+            # Generate unique device_id if not provided
+            device_id = f"backend-{uuid.uuid4()}"
+        
+        # Check if device_id already exists
+        existing_user = User.objects.filter(device_id=device_id).first()
+        if existing_user:
+            # Return existing user's tokens
+            refresh = RefreshToken.for_user(existing_user)
+            
+            response_data, http_status = success_response(
+                message='Returning existing anonymous user.',
+                data={
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': UserSerializer(existing_user).data,
+                },
+                code=ResponseCodes.SUCCESS
+            )
+            return Response(response_data, status=http_status)
+        
+        # Create new anonymous user
+        user = User.objects.create(
+            device_id=device_id,
+            is_anonymous=True,
+            auth_provider='anonymous',
+            is_active=True,
+        )
+        
+        # Generate tokens
+        refresh = RefreshToken.for_user(user)
+        
+        response_data, http_status = success_response(
+            message='Anonymous user created successfully.',
+            data={
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user).data,
+            },
+            code=ResponseCodes.ANONYMOUS_USER_CREATED,
+            http_status=status.HTTP_201_CREATED
+        )
+        return Response(response_data, status=http_status)
+
+
+@extend_schema(
+    tags=['Anonymous Users'],
+    request=ConvertAnonymousSerializer,
+    responses={
+        200: TokenResponseSerializer,
+        400: OpenApiResponse(description='Bad Request'),
+        403: OpenApiResponse(description='Not an anonymous user'),
+    },
+)
+class ConvertAnonymousView(APIView):
+    """
+    Convert an anonymous user to a real user account.
+    Requires authentication (anonymous user's token).
+    Can choose to merge data (keep same ID) or create new account.
+    """
+    
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        
+        # Check if user is anonymous
+        if not user.is_anonymous:
+            response_data, http_status = error_response(
+                error='User is not an anonymous user.',
+                code=ResponseCodes.NOT_ANONYMOUS_USER,
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+            return Response(response_data, status=http_status)
+        
+        serializer = ConvertAnonymousSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+        first_name = serializer.validated_data.get('first_name', '')
+        last_name = serializer.validated_data.get('last_name', '')
+        merge_data = serializer.validated_data.get('merge_data', True)
+        
+        if merge_data:
+            # Update existing user (merge strategy - keeps same ID)
+            user.email = email
+            user.set_password(password)
+            user.first_name = first_name
+            user.last_name = last_name
+            user.is_anonymous = False
+            user.auth_provider = 'email'
+            user.device_id = None  # Clear device_id
+            user.save()
+            
+            # Generate new tokens for the updated user
+            refresh = RefreshToken.for_user(user)
+            
+            response_data, http_status = success_response(
+                message='Anonymous user converted successfully. Data merged.',
+                data={
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': UserSerializer(user).data,
+                },
+                code=ResponseCodes.ANONYMOUS_USER_CONVERTED
+            )
+            return Response(response_data, status=http_status)
+        else:
+            # Create new user and delete anonymous one
+            new_user = User.objects.create_user(
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+            )
+            
+            # TODO: Here you can implement data migration logic
+            # For example, transfer user's app data from old user to new user
+            # migrate_user_data(from_user=user, to_user=new_user)
+            
+            # Delete anonymous user
+            user.delete()
+            
+            # Generate tokens for new user
+            refresh = RefreshToken.for_user(new_user)
+            
+            response_data, http_status = success_response(
+                message='New user account created. Anonymous user deleted.',
+                data={
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                    'user': UserSerializer(new_user).data,
+                },
+                code=ResponseCodes.ANONYMOUS_USER_CONVERTED
             )
             return Response(response_data, status=http_status)
