@@ -1,0 +1,31 @@
+# Django
+Django==5.2.7
+
+# Django REST Framework
+djangorestframework==3.15.2
+
+# JWT Authentication
+djangorestframework-simplejwt==5.4.0
+PyJWT==2.9.0
+
+# Social Authentication
+dj-rest-auth==6.0.0
+django-allauth==65.3.0
+
+# Google & Apple OAuth
+social-auth-app-django==5.4.2
+google-auth==2.36.0
+requests==2.32.3
+
+# CORS Headers
+django-cors-headers==4.6.0
+
+# Swagger/OpenAPI Documentation
+drf-spectacular==0.28.0
+
+# Environment Variables
+python-decouple==3.8
+
+# Additional utilities
+sqlparse==0.5.3
+
