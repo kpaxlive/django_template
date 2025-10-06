@@ -11,7 +11,10 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'auth_provider', 'date_joined']
+        fields = [
+            'id', 'email', 'first_name', 'last_name', 'auth_provider', 
+            'date_joined', 'profile_picture_url', 'bio'
+        ]
         read_only_fields = ['id', 'date_joined', 'auth_provider']
 
 
@@ -185,4 +188,24 @@ class ConvertAnonymousSerializer(serializers.Serializer):
             })
         
         return attrs
+
+
+class UpdateProfileSerializer(serializers.ModelSerializer):
+    """Serializer for updating user profile."""
+    
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'bio', 'profile_picture_url']
+        extra_kwargs = {
+            'first_name': {'required': False},
+            'last_name': {'required': False},
+            'bio': {'required': False, 'max_length': 200},
+            'profile_picture_url': {'required': False},
+        }
+    
+    def validate_bio(self, value):
+        """Validate bio length."""
+        if value and len(value) > 200:
+            raise serializers.ValidationError('Bio cannot exceed 200 characters.')
+        return value
 

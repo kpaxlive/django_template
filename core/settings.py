@@ -33,6 +33,11 @@ ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
 # Application definition
 
 INSTALLED_APPS = [
+    # Third-party apps (ASGI - must be FIRST before staticfiles)
+    'daphne',  # ASGI server - must be first for Channels
+    'channels',  # WebSocket support
+    
+    # Django apps
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -41,7 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sites',
     
-    # Third-party apps
+    # Third-party apps (REST & Auth)
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
@@ -58,6 +63,7 @@ INSTALLED_APPS = [
     
     # Local apps
     'src.accounts',
+    'src.chat',
 ]
 
 SITE_ID = 1
@@ -92,6 +98,21 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
+
+# Channels Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],  # Redis host
+        },
+    },
+    # For development without Redis, use InMemoryChannelLayer (not for production!)
+    # 'default': {
+    #     'BACKEND': 'channels.layers.InMemoryChannelLayer'
+    # }
+}
 
 
 # Database
@@ -255,6 +276,22 @@ REST_AUTH = {
     'TOKEN_MODEL': None,  # We're using JWT, not token auth
 }
 
-# Anonymous User Settings
+# ============================================================================
+# OPTIONAL FEATURES (Template Configuration)
+# ============================================================================
+
+# Authentication System (Optional Feature)
+ENABLE_AUTH_SYSTEM = config('ENABLE_AUTH_SYSTEM', default=True, cast=bool)
+
+# Anonymous User Settings (Optional Feature)
 ALLOW_ANONYMOUS_USERS = config('ALLOW_ANONYMOUS_USERS', default=True, cast=bool)
 ANONYMOUS_USER_RETENTION_DAYS = config('ANONYMOUS_USER_RETENTION_DAYS', default=30, cast=int)
+
+# Chat System Settings (Optional Feature)
+ENABLE_CHAT_SYSTEM = config('ENABLE_CHAT_SYSTEM', default=True, cast=bool)
+
+# Media Files (Optional - for future S3 integration)
+# Currently, profile_picture_url is used (URL field, not file upload)
+# Uncomment below if you need local media file uploads:
+# MEDIA_URL = '/media/'
+# MEDIA_ROOT = BASE_DIR / 'media'

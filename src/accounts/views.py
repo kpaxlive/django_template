@@ -1,4 +1,4 @@
-from rest_framework import status, generics
+from rest_framework import status, generics, parsers
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
@@ -20,6 +20,7 @@ from .serializers import (
     AppleLoginSerializer,
     AnonymousRegisterSerializer,
     ConvertAnonymousSerializer,
+    UpdateProfileSerializer,
 )
 from .responses import success_response, error_response, ResponseCodes
 from django.conf import settings
@@ -647,3 +648,58 @@ class ConvertAnonymousView(APIView):
                 code=ResponseCodes.ANONYMOUS_USER_CONVERTED
             )
             return Response(response_data, status=http_status)
+
+
+@extend_schema(
+    tags=['User Profile'],
+    request=UpdateProfileSerializer,
+    responses={
+        200: UpdateProfileSerializer,
+        400: OpenApiResponse(description='Bad Request'),
+    },
+)
+class UpdateProfileView(APIView):
+    """
+    Update user profile (name, bio, profile picture URL).
+    Requires authentication.
+    """
+    
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        user = request.user
+        
+        serializer = UpdateProfileSerializer(
+            user,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        
+        response_data, http_status = success_response(
+            message='Profile updated successfully.',
+            data=serializer.data,
+            code=ResponseCodes.UPDATED
+        )
+        return Response(response_data, status=http_status)
+    
+    def put(self, request):
+        """Full update of profile."""
+        user = request.user
+        
+        serializer = UpdateProfileSerializer(
+            user,
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        
+        response_data, http_status = success_response(
+            message='Profile updated successfully.',
+            data=serializer.data,
+            code=ResponseCodes.UPDATED
+        )
+        return Response(response_data, status=http_status)

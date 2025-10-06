@@ -20,4 +20,5 @@ urlpatterns = [
     
     # API Endpoints
     path('api/auth/', include('src.accounts.urls')),
+    path('api/chat/', include('src.chat.urls')),
 ]

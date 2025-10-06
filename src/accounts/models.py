@@ -40,6 +40,19 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
     
+    # Profile fields
+    profile_picture_url = models.URLField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text='User profile picture URL (e.g., S3 URL)'
+    )
+    bio = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text='User bio/description (max 200 characters)'
+    )
+    
     # Anonymous user fields
     is_anonymous = models.BooleanField(default=False, db_index=True)
     device_id = models.CharField(max_length=255, unique=True, null=True, blank=True, db_index=True)

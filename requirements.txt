@@ -29,3 +29,8 @@ python-decouple==3.8
 # Additional utilities
 sqlparse==0.5.3
 
+# WebSocket & Real-time (Django Channels)
+channels==4.0.0
+channels-redis==4.2.0
+daphne==4.0.0
+

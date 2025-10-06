@@ -10,6 +10,7 @@ from .views import (
     AppleLoginView,
     AnonymousRegisterView,
     ConvertAnonymousView,
+    UpdateProfileView,
 )
 
 app_name = 'accounts'
@@ -23,6 +24,7 @@ urlpatterns = [
     
     # User Management
     path('user/', CurrentUserView.as_view(), name='current_user'),
+    path('user/update/', UpdateProfileView.as_view(), name='update_profile'),
     path('user/delete/', DeleteUserView.as_view(), name='delete_user'),
     
     # Social Authentication
