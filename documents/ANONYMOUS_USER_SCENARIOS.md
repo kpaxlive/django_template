@@ -92,18 +92,20 @@ Content-Type: application/json
 Future<void> convertToEmailUser({
   required String email,
   required String password,
+  bool mergeData = true,  // Keep same user ID and data
 }) async {
   final accessToken = await storage.read(key: 'access_token');
   
   final response = await dio.post(
-    '/auth/anonymous/convert/',
+    '/auth/register/',  // Use the same register endpoint!
     data: {
       'email': email,
-      'password1': password,
+      'password': password,
       'password2': password,
+      'merge_data': mergeData,  // Optional, defaults to true
     },
     options: Options(headers: {
-      'Authorization': 'Bearer $accessToken',
+      'Authorization': 'Bearer $accessToken',  // Include anonymous token
     }),
   );
   
@@ -126,26 +128,46 @@ Future<void> convertToEmailUser({
 
 **API:**
 ```bash
-POST /api/auth/anonymous/convert/
+POST /api/auth/register/
 Authorization: Bearer <anonymous_access_token>
 Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password1": "SecurePass123!",
-  "password2": "SecurePass123!"
+  "password": "SecurePass123!",
+  "password2": "SecurePass123!",
+  "merge_data": true  # Optional, defaults to true
 }
 ```
 
-**Response:**
+**Response (merge_data=true):**
 ```json
 {
   "success": true,
   "code": "SUCCESS",
-  "message": "Anonymous user converted successfully.",
+  "message": "Anonymous user converted successfully. Data merged.",
   "data": {
     "user": {
       "id": 5,
+      "email": "user@example.com",
+      "is_anonymous": false,
+      "auth_provider": "email"
+    },
+    "access": "eyJ0eXAiOiJKV1Qi...",
+    "refresh": "eyJ0eXAiOiJKV1Qi..."
+  }
+}
+```
+
+**Response (merge_data=false):**
+```json
+{
+  "success": true,
+  "code": "CREATED",
+  "message": "New user account created. Anonymous user data transferred.",
+  "data": {
+    "user": {
+      "id": 10,
       "email": "user@example.com",
       "is_anonymous": false,
       "auth_provider": "email"
@@ -181,12 +203,12 @@ Future<void> convertToGoogleUser() async {
   
   // Send to backend
   final response = await dio.post(
-    '/auth/google/',
+    '/auth/login/google/',
     data: {
       'access_token': googleAccessToken,
     },
     options: Options(headers: {
-      'Authorization': 'Bearer $anonAccessToken', // Include anon token
+      'Authorization': 'Bearer $anonAccessToken', // Include anon token for merge
     }),
   );
   
@@ -204,7 +226,7 @@ Future<void> convertToGoogleUser() async {
 
 **API:**
 ```bash
-POST /api/auth/google/
+POST /api/auth/login/google/
 Authorization: Bearer <anonymous_access_token>  # Optional - for merge
 Content-Type: application/json
 
@@ -518,9 +540,10 @@ Future<String> getDeviceId() async {
 ```
 
 ### 2. Data Persistence
-- Anonymous user data is **automatically preserved** after conversion
-- Same user ID is kept
+- Anonymous user data is **automatically preserved** after conversion (when `merge_data=true`, which is default)
+- Same user ID is kept when merging
 - All chat messages, preferences, etc. remain
+- If `merge_data=false`, a new user is created and old data can be migrated (implement custom logic)
 
 ### 3. Email Conflict
 - If email already exists: Error returned
@@ -575,11 +598,14 @@ await storage.write(key: 'is_anonymous', value: 'false');
 | Action | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | Register Anonymous | `POST /auth/anonymous/register/` | No | Create anonymous user |
-| Convert to Email | `POST /auth/anonymous/convert/` | Yes (Anon) | Convert to email user |
-| Convert to Google | `POST /auth/google/` | Yes (Anon) | Convert to Google user |
-| Convert to Apple | `POST /auth/apple/` | Yes (Anon) | Convert to Apple user |
+| Convert to Email | `POST /auth/register/` | Yes (Anon) | Convert to email user (same as normal register) |
+| Convert to Google | `POST /auth/login/google/` | Yes (Anon) | Convert to Google user (same as normal Google login) |
+| Convert to Apple | `POST /auth/login/apple/` | Yes (Anon) | Convert to Apple user (same as normal Apple login) |
 
-**All data is preserved during conversion!**
+**Key Points:**
+- All authentication endpoints (register, Google, Apple) automatically handle anonymous user conversion
+- Data is preserved during conversion when `merge_data=true` (default)
+- This provides a **consistent API** across all authentication methods
 
 ---
 

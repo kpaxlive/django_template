@@ -36,7 +36,7 @@ Complete guide for implementing authentication and chat flows in Flutter.
 Future<void> register() async {
   final response = await dio.post('/auth/register/', data: {
     'email': 'user@example.com',
-    'password1': 'SecurePass123!',
+    'password': 'SecurePass123!',
     'password2': 'SecurePass123!',
   });
   
@@ -61,8 +61,11 @@ Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password1": "SecurePass123!",
-  "password2": "SecurePass123!"
+  "password": "SecurePass123!",
+  "password2": "SecurePass123!",
+  "first_name": "John",  // optional
+  "last_name": "Doe",    // optional
+  "merge_data": true     // optional, default: true (for anonymous users)
 }
 ```
 
@@ -86,6 +89,8 @@ Content-Type: application/json
   }
 }
 ```
+
+**Note:** This endpoint also supports anonymous user conversion. See section 4 for details.
 
 ---
 
@@ -185,23 +190,25 @@ Future<void> registerAnonymous() async {
 }
 ```
 
-**Convert to Real User:**
+**Convert to Real User (Email/Password):**
 ```dart
-Future<void> convertAnonymous({
+Future<void> convertAnonymousToEmail({
   required String email,
   required String password,
+  bool mergeData = true,  // Keep same user ID and data
 }) async {
   final accessToken = await storage.read(key: 'access_token');
   
   final response = await dio.post(
-    '/auth/anonymous/convert/',
+    '/auth/register/',  // Same endpoint as normal registration!
     data: {
       'email': email,
-      'password1': password,
+      'password': password,
       'password2': password,
+      'merge_data': mergeData,  // Optional, defaults to true
     },
     options: Options(headers: {
-      'Authorization': 'Bearer $accessToken',
+      'Authorization': 'Bearer $accessToken',  // Include anonymous token
     }),
   );
   
@@ -217,6 +224,8 @@ Future<void> convertAnonymous({
   }
 }
 ```
+
+**Note:** The register endpoint automatically detects if you're authenticated as an anonymous user and converts it accordingly.
 
 ---
 
@@ -563,18 +572,20 @@ final user = handleResponse(response, (data) => User.fromJson(data));
 
 | Flow | Endpoint | Method | Auth Required |
 |------|----------|--------|---------------|
-| Register | `/auth/register/` | POST | No |
+| Register | `/auth/register/` | POST | No (Optional for anon) |
 | Login | `/auth/login/` | POST | No |
 | Logout | `/auth/logout/` | POST | Yes |
 | Refresh Token | `/auth/token/refresh/` | POST | No |
 | Get User | `/auth/user/` | GET | Yes |
-| Google OAuth | `/auth/google/` | POST | No |
+| Google OAuth | `/auth/login/google/` | POST | No (Optional for anon) |
+| Apple OAuth | `/auth/login/apple/` | POST | No (Optional for anon) |
 | Anonymous Register | `/auth/anonymous/register/` | POST | No |
-| Convert Anonymous | `/auth/anonymous/convert/` | POST | Yes (Anon) |
 | Chat List | `/chat/` | GET | Yes |
 | Create Chat | `/chat/create/` | POST | Yes |
 | Send Message | `/chat/{id}/messages/send/` | POST | Yes |
 | WebSocket | `ws://...` | WS | Yes (token param) |
+
+**Note:** Register, Google OAuth, and Apple OAuth endpoints support anonymous user conversion when called with an anonymous user's token.
 
 ---
 

@@ -19,7 +19,13 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    """Serializer for user registration."""
+    """Serializer for user registration.
+    
+    Supports anonymous user conversion:
+    - If authenticated as anonymous user, converts to real account (merge by default)
+    - If merge_data=True, keeps same user ID and data
+    - If merge_data=False, creates new user and deletes anonymous one
+    """
     
     password = serializers.CharField(
         write_only=True,
@@ -33,26 +39,41 @@ class RegisterSerializer(serializers.ModelSerializer):
         style={'input_type': 'password'},
         label='Confirm Password'
     )
+    merge_data = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text='If true and user is anonymous, keeps same user ID and data. If false, creates new user.'
+    )
     
     class Meta:
         model = User
-        fields = ['email', 'password', 'password2', 'first_name', 'last_name']
+        fields = ['email', 'password', 'password2', 'first_name', 'last_name', 'merge_data']
         extra_kwargs = {
             'first_name': {'required': False},
             'last_name': {'required': False},
         }
 
     def validate(self, attrs):
-        """Validate that passwords match."""
+        """Validate that passwords match and email is unique."""
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({
                 "password": "Password fields didn't match."
             })
+        
+        # Check if email already exists (for non-anonymous users)
+        email = attrs['email']
+        if User.objects.filter(email=email, is_anonymous=False).exists():
+            raise serializers.ValidationError({
+                "email": "User with this email already exists."
+            })
+        
         return attrs
 
     def create(self, validated_data):
         """Create and return a new user."""
         validated_data.pop('password2')
+        validated_data.pop('merge_data', None)  # Remove merge_data from validated_data
+        
         user = User.objects.create_user(
             email=validated_data['email'],
             password=validated_data['password'],
@@ -147,47 +168,6 @@ class AnonymousRegisterSerializer(serializers.Serializer):
         if value and len(value) < 10:
             raise serializers.ValidationError('Device ID must be at least 10 characters.')
         return value
-
-
-class ConvertAnonymousSerializer(serializers.Serializer):
-    """Serializer for converting anonymous user to real user."""
-    
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        validators=[validate_password],
-        style={'input_type': 'password'}
-    )
-    password2 = serializers.CharField(
-        write_only=True,
-        required=True,
-        style={'input_type': 'password'},
-        label='Confirm Password'
-    )
-    first_name = serializers.CharField(required=False, allow_blank=True)
-    last_name = serializers.CharField(required=False, allow_blank=True)
-    merge_data = serializers.BooleanField(
-        required=False,
-        default=True,
-        help_text='If true, keeps the same user ID and data. If false, creates new user.'
-    )
-    
-    def validate(self, attrs):
-        """Validate that passwords match."""
-        if attrs['password'] != attrs['password2']:
-            raise serializers.ValidationError({
-                "password": "Password fields didn't match."
-            })
-        
-        # Check if email already exists (for non-anonymous users)
-        email = attrs['email']
-        if User.objects.filter(email=email, is_anonymous=False).exists():
-            raise serializers.ValidationError({
-                "email": "User with this email already exists."
-            })
-        
-        return attrs
 
 
 class UpdateProfileSerializer(serializers.ModelSerializer):

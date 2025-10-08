@@ -9,7 +9,6 @@ from .views import (
     GoogleLoginView,
     AppleLoginView,
     AnonymousRegisterView,
-    ConvertAnonymousView,
     UpdateProfileView,
 )
 
@@ -33,6 +32,5 @@ urlpatterns = [
     
     # Anonymous Users
     path('anonymous/register/', AnonymousRegisterView.as_view(), name='anonymous_register'),
-    path('anonymous/convert/', ConvertAnonymousView.as_view(), name='convert_anonymous'),
 ]
 

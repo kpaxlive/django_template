@@ -19,7 +19,6 @@ from .serializers import (
     GoogleLoginSerializer,
     AppleLoginSerializer,
     AnonymousRegisterSerializer,
-    ConvertAnonymousSerializer,
     UpdateProfileSerializer,
 )
 from .responses import success_response, error_response, ResponseCodes
@@ -35,12 +34,20 @@ User = get_user_model()
         201: TokenResponseSerializer,
         400: OpenApiResponse(description='Bad Request'),
     },
-    auth=[],  # No authentication required
+    auth=[],  # No authentication required, but supports anonymous user conversion
 )
 class RegisterView(generics.CreateAPIView):
     """
     Register a new user with email and password.
     Returns access and refresh tokens upon successful registration.
+    
+    **Anonymous User Conversion:**
+    If called with an authenticated anonymous user's token, it will convert 
+    the anonymous user to a real account:
+    - `merge_data=true` (default): Keeps same user ID and data
+    - `merge_data=false`: Creates new user and deletes anonymous one
+    
+    This provides the same behavior as social authentication (Google/Apple).
     """
     
     queryset = User.objects.all()
@@ -50,20 +57,73 @@ class RegisterView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        
+        # Check if current user is anonymous (for merge)
+        current_user = request.user if request.user.is_authenticated else None
+        is_anonymous_merge = current_user and getattr(current_user, 'is_anonymous', False)
+        
+        if is_anonymous_merge:
+            # Anonymous user conversion flow
+            merge_data = serializer.validated_data.get('merge_data', True)
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
+            first_name = serializer.validated_data.get('first_name', '')
+            last_name = serializer.validated_data.get('last_name', '')
+            
+            if merge_data:
+                # Merge strategy: Update existing anonymous user
+                user = current_user
+                user.email = email
+                user.set_password(password)
+                user.first_name = first_name
+                user.last_name = last_name
+                user.is_anonymous = False
+                user.auth_provider = 'email'
+                user.device_id = None
+                user.save()
+                
+                message = 'Anonymous user converted successfully. Data merged.'
+                code = ResponseCodes.SUCCESS
+            else:
+                # Create new user strategy: Create new and delete old
+                user = serializer.save()
+                
+                # TODO: Implement data migration logic if needed
+                # migrate_user_data(from_user=current_user, to_user=user)
+                
+                # Delete anonymous user
+                current_user.delete()
+                
+                message = 'New user account created. Anonymous user data transferred.'
+                code = ResponseCodes.CREATED
+        else:
+            # Normal registration flow
+            if current_user and not current_user.is_anonymous:
+                # User is already registered (not anonymous)
+                response_data, http_status = error_response(
+                    error='User is already registered.',
+                    code=ResponseCodes.ALREADY_REGISTERED,
+                    http_status=status.HTTP_400_BAD_REQUEST
+                )
+                return Response(response_data, status=http_status)
+            
+            # Create new user
+            user = serializer.save()
+            message = 'User registered successfully.'
+            code = ResponseCodes.CREATED
         
         # Generate tokens
         refresh = RefreshToken.for_user(user)
         
         response_data, http_status = success_response(
-            message='User registered successfully.',
+            message=message,
             data={
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
                 'user': UserSerializer(user).data,
             },
-            code=ResponseCodes.CREATED,
-            http_status=status.HTTP_201_CREATED
+            code=code,
+            http_status=status.HTTP_201_CREATED if code == ResponseCodes.CREATED else status.HTTP_200_OK
         )
         return Response(response_data, status=http_status)
 
@@ -554,100 +614,6 @@ class AnonymousRegisterView(APIView):
             http_status=status.HTTP_201_CREATED
         )
         return Response(response_data, status=http_status)
-
-
-@extend_schema(
-    tags=['Anonymous Users'],
-    request=ConvertAnonymousSerializer,
-    responses={
-        200: TokenResponseSerializer,
-        400: OpenApiResponse(description='Bad Request'),
-        403: OpenApiResponse(description='Not an anonymous user'),
-    },
-)
-class ConvertAnonymousView(APIView):
-    """
-    Convert an anonymous user to a real user account.
-    Requires authentication (anonymous user's token).
-    Can choose to merge data (keep same ID) or create new account.
-    """
-    
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        user = request.user
-        
-        # Check if user is anonymous
-        if not user.is_anonymous:
-            response_data, http_status = error_response(
-                error='User is not an anonymous user.',
-                code=ResponseCodes.NOT_ANONYMOUS_USER,
-                http_status=status.HTTP_400_BAD_REQUEST
-            )
-            return Response(response_data, status=http_status)
-        
-        serializer = ConvertAnonymousSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        
-        email = serializer.validated_data['email']
-        password = serializer.validated_data['password']
-        first_name = serializer.validated_data.get('first_name', '')
-        last_name = serializer.validated_data.get('last_name', '')
-        merge_data = serializer.validated_data.get('merge_data', True)
-        
-        if merge_data:
-            # Update existing user (merge strategy - keeps same ID)
-            user.email = email
-            user.set_password(password)
-            user.first_name = first_name
-            user.last_name = last_name
-            user.is_anonymous = False
-            user.auth_provider = 'email'
-            user.device_id = None  # Clear device_id
-            user.save()
-            
-            # Generate new tokens for the updated user
-            refresh = RefreshToken.for_user(user)
-            
-            response_data, http_status = success_response(
-                message='Anonymous user converted successfully. Data merged.',
-                data={
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                    'user': UserSerializer(user).data,
-                },
-                code=ResponseCodes.ANONYMOUS_USER_CONVERTED
-            )
-            return Response(response_data, status=http_status)
-        else:
-            # Create new user and delete anonymous one
-            new_user = User.objects.create_user(
-                email=email,
-                password=password,
-                first_name=first_name,
-                last_name=last_name,
-            )
-            
-            # TODO: Here you can implement data migration logic
-            # For example, transfer user's app data from old user to new user
-            # migrate_user_data(from_user=user, to_user=new_user)
-            
-            # Delete anonymous user
-            user.delete()
-            
-            # Generate tokens for new user
-            refresh = RefreshToken.for_user(new_user)
-            
-            response_data, http_status = success_response(
-                message='New user account created. Anonymous user deleted.',
-                data={
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                    'user': UserSerializer(new_user).data,
-                },
-                code=ResponseCodes.ANONYMOUS_USER_CONVERTED
-            )
-            return Response(response_data, status=http_status)
 
 
 @extend_schema(
